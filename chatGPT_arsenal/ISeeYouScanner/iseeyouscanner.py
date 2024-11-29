@@ -6,6 +6,7 @@ import sys
 from ipaddress import ip_address, AddressValueError
 import random
 import socket
+import subprocess
 
 def tcp_scan(target, ports):
     print(f"Starting TCP scan on {target}")
@@ -22,12 +23,12 @@ def tcp_scan(target, ports):
                 print(f"Port {port}: Open")
                 # Send RST to gracefully close the connection
                 sr(IP(dst=target)/TCP(dport=port, flags='R'), timeout=1, verbose=0)
-                # Perform banner grabbing
+                # Perform banner grabbing using Netcat
                 banner = grab_banner(target, port)
                 if banner:
-                    print(f"Port {port} Banner:\n{banner}")
+                    print(f"Port {port} Banner:\n{banner}\n")
                 else:
-                    print(f"Port {port}: No banner received")
+                    print(f"Port {port}: No banner received\n")
             elif tcp_flags == 0x14:  # RST-ACK
                 pass  # Port is closed, do nothing
             else:
@@ -35,32 +36,20 @@ def tcp_scan(target, ports):
         else:
             print(f"Port {port}: Unknown response")
 
-
 def grab_banner(target, port):
     try:
-        # Create a TCP socket
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(2)
-        s.connect((target, port))
-
-        # Prepare the request based on common services
-        if port == 80 or port == 8080:
-            # Send an HTTP GET request
-            s.sendall(b"GET / HTTP/1.1\r\nHost: {}\r\n\r\n".format(target.encode()))
-        elif port == 443:
-            # For HTTPS, wrap the socket with SSL
-            context = ssl.create_default_context()
-            s = context.wrap_socket(s, server_hostname=target)
-            s.sendall(b"GET / HTTP/1.1\r\nHost: {}\r\n\r\n".format(target.encode()))
-        else:
-            # Send a generic message
-            s.sendall(b"Hello\r\n")
-
-        # Receive data
-        banner = s.recv(1024).decode(errors='ignore').strip()
-        s.close()
+        # Build the Netcat command
+        cmd = ['nc', target, str(port)]
+        # Run the Netcat command and capture the output
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        # Send newline characters to simulate pressing enter
+        proc.stdin.write(b'\n\n')
+        proc.stdin.flush()
+        # Read the output
+        output, _ = proc.communicate(timeout=5)
+        banner = output.decode('utf-8', errors='ignore').strip()
         return banner
-    except Exception as e:
+    except Exception:
         return None
 
 def udp_scan(target, ports):
